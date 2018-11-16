@@ -1,0 +1,15 @@
+Metadata-Version: 1.1
+Name: vassal
+Version: 0.0.1
+Summary: The automate terminal
+Home-page: https://github.com/Shawn-Shan/vassal
+Author: Shawn Shan
+Author-email: shawnshan1825@gmail.com
+License: UNKNOWN
+Description: # vassal
+        The automate terminal
+        
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent

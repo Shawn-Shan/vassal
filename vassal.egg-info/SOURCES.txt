@@ -1,0 +1,10 @@
+README.md
+setup.py
+vassal/__init__.py
+vassal/scheduler.py
+vassal/ssh.py
+vassal/terminal.py
+vassal.egg-info/PKG-INFO
+vassal.egg-info/SOURCES.txt
+vassal.egg-info/dependency_links.txt
+vassal.egg-info/top_level.txt

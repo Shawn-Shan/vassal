@@ -23,6 +23,16 @@ shell = Terminal(["scp username@host:/home/foo.txt foo_local.txt"])
 shell.run()
 ```
 
+3. run commands every 1 sec
+
+```
+from vassal.terminal import Terminal
+from vassal.scheduler import Scheduler
+shell = Terminal(["ssh username@host", "cd scripts", "python foo1.py", "python foo2.py"])
+shell = Scheduler(shell, sec=1)
+shell.run()
+```
+
 ### Installing
 
 ```

@@ -5,26 +5,31 @@ import getpass
 import os
 import socket
 import sys
+import random
+import string
 import hashlib
 from cryptography.fernet import Fernet
 from paramiko.py3compat import input
 import paramiko
 import pickle
+import time
 
 
 class SSH(object):
-    def __init__(self, server, username, password=None, pkey_path=None, pkey_password=None):
+    def __init__(self, server, username, password=None, pkey_path=None, pkey_password=None, screen=False):
         self.ssh = paramiko.SSHClient()
         self.ssh.load_system_host_keys()
         self.server = server
-
         self.username = username
         self.password = password
         self.pkey = self.load_key(pkey_path, pkey_password)
         self.port = 22
+        self.package_path = os.path.dirname(os.path.realpath(__file__))
         if self.server.find(":") >= 0:
             self.server, portstr = self.server.split(":")
             self.port = int(portstr)
+        self.screen = screen
+        self.screen_ids = []
 
     def load_key(self, pkey_path, pkey_password):
         if pkey_path is not None:
@@ -40,18 +45,6 @@ class SSH(object):
                     raise Exception("Wrong password for Public Private key file")
                 return pkey
         return None
-
-    def _input_auth(self):
-        try:
-            self.ssh.connect(hostname=self.server, username=self.username, pkey=self.pkey, password=self.password,
-                             port=self.port)
-            t = self.ssh.get_transport()
-            chan = t.open_session()
-            chan.get_pty()
-            chan.invoke_shell()
-            return t, chan
-        except paramiko.ssh_exception.AuthenticationException:
-            return None
 
     def run_exec(self, cmd, stderr=False):
         (stdin, stdout, stderr_out) = self.ssh.exec_command(cmd)
@@ -70,14 +63,24 @@ class SSH(object):
             sys.stdout.write(data.decode())
             sys.stdout.flush()
 
-    def run(self, cmds):
-        self.authenticate()
+    def _random_string(self):
+        return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(3))
+
+    def _process_commands(self, cmds):
+        if self.screen:
+            screen_id = "vassal-temp-" + self._random_string()
+            self.screen_ids.append(screen_id)
+            cmds = ["screen -S {}\n".format(screen_id), "\n\n"] + cmds
         for i in range(len(cmds)):
             if not cmds[i].endswith("\n"):
                 cmds[i] += "\n"
-        cmds.append("exit\n")
+
+        return cmds
+
+    def run(self, cmds):
+        self.authenticate()
+        cmds = self._process_commands(cmds)
         chan = self.chan
-        sys.stdout.write("Line-buffered terminal emulation. Press F6 or ^Z to send EOF.\r\n\r\n")
         writer = threading.Thread(target=self._writeall, args=(chan,))
         writer.start()
         try:
@@ -85,8 +88,17 @@ class SSH(object):
                 chan.send(i)
         except (EOFError, KeyboardInterrupt):
             pass
+        time.sleep(1)
+        self.close(chan)
 
-    def _progress(self, filename, size, sent):
+    def close(self, chan):
+        for screen_id in self.screen_ids:
+            cmd = "screen -X -S %s quit\n" % screen_id
+            chan.send(cmd)
+        self.chan.close()
+        self.ssh.close()
+
+    def _progress_scp(self, filename, size, sent):
         sys.stdout.write("%s\'s progress: %.2f%%   \r" % (filename, float(sent) / float(size) * 100))
 
     def _load_auth(self, cred_fname):
@@ -100,8 +112,9 @@ class SSH(object):
         return mode, password.decode(), keypass
 
     def _save_auth(self, cred_fname, mode, password="", keypass=""):
-        if not os.path.exists("mapping"):
-            os.mkdir("mapping")
+        map_path = os.path.join(self.package_path, 'mapping')
+        if not os.path.exists(map_path):
+            os.mkdir(map_path)
         credentials = {}
         key = Fernet.generate_key()
         credentials['key'] = key
@@ -110,6 +123,18 @@ class SSH(object):
         credentials['mode'] = mode
         credentials['keypass'] = keypass
         pickle.dump(credentials, open(cred_fname, 'wb'))
+
+    def _input_auth(self):
+        try:
+            self.ssh.connect(hostname=self.server, username=self.username, pkey=self.pkey, password=self.password,
+                             port=self.port)
+            t = self.ssh.get_transport()
+            chan = t.open_session()
+            chan.get_pty()
+            chan.invoke_shell()
+            return t, chan
+        except paramiko.ssh_exception.AuthenticationException:
+            return None
 
     def _rsa(self, t, username, path=None, password=None):
         default_path = os.path.join(os.environ["HOME"], ".ssh", "id_rsa")
@@ -185,7 +210,7 @@ class SSH(object):
         m.update(server.encode())
         m.update(username.encode())
         md5sum = str(m.hexdigest())
-        key_path = "mapping/{}.plk".format(md5sum)
+        key_path = os.path.join(self.package_path, "mapping/{}.plk".format(md5sum))
         return key_path
 
     def _socket_server(self, hostname):
@@ -199,7 +224,7 @@ class SSH(object):
 
     def scp_upload(self, file, remote_path="", recursive=False):
         self.authenticate()
-        scp_client = SCPClient(self.transport, progress=self._progress)
+        scp_client = SCPClient(self.transport, progress=self._progress_scp)
         if remote_path != "":
             scp_client.put(file, recursive=recursive, remote_path=remote_path)
         else:
@@ -208,7 +233,7 @@ class SSH(object):
 
     def scp_download(self, file, local_path="", recursive=False):
         self.authenticate()
-        scp_client = SCPClient(self.transport, progress=self._progress)
+        scp_client = SCPClient(self.transport, progress=self._progress_scp)
         scp_client.get(file, recursive=recursive, local_path=local_path)
         scp_client.close()
 

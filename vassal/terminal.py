@@ -1,5 +1,5 @@
 import subprocess
-from vassal.ssh import SSH
+from ssh import SSH
 import os
 
 
@@ -20,12 +20,13 @@ class ArgsSCP(object):
 
 
 class Terminal(object):
-    def __init__(self, commands, ssh_password=None, pkey_path=None, pkey_password=None):
+    def __init__(self, commands, ssh_password=None, pkey_path=None, pkey_password=None, screen=False):
         self.commands = commands
         self.ssh_password = ssh_password
         self.pkey_path = pkey_path
         self.pkey_password = pkey_password
         self.cwd = os.path.dirname(os.path.realpath(__file__))
+        self.screen = screen
 
     def truncate_command(self):
         cmd_truncks = []
@@ -63,7 +64,7 @@ class Terminal(object):
         else:
             commands = [first_cmd]
         cur_trunk = TerminalTrunk(commands, self.cwd, ssh_password=self.ssh_password, pkey_path=self.pkey_path,
-                                  pkey_password=self.pkey_password)
+                                  pkey_password=self.pkey_password, screen=self.screen)
         if first_cmd is not None:
             if first_cmd.startswith("ssh"):
                 cur_trunk.ssh = True
@@ -83,7 +84,7 @@ class Terminal(object):
 
 
 class TerminalTrunk(object):
-    def __init__(self, commands, cwd, ssh_password=None, pkey_path=None, pkey_password=None, ssh=False, scp=False):
+    def __init__(self, commands, cwd, ssh_password=None, pkey_path=None, pkey_password=None, ssh=False, scp=False, screen=False):
         self.commands = commands
         self.ssh_password = ssh_password
         self.pkey_path = pkey_path
@@ -91,6 +92,7 @@ class TerminalTrunk(object):
         self.cwd = cwd
         self.ssh = ssh
         self.scp = scp
+        self.screen = screen
 
     def _run_local(self):
         change_cwd = "cd " + self.cwd
@@ -139,13 +141,12 @@ class TerminalTrunk(object):
     def _init_ssh(self):
         username, server = self._parse_ssh(self.commands[0])
         client = SSH(server, username, password=self.ssh_password, pkey_path=self.pkey_path,
-                     pkey_password=self.pkey_password)
+                     pkey_password=self.pkey_password, screen=self.screen)
         return client
 
     def _run_ssh(self):
         client = self._init_ssh()
         results = client.run(self.commands[1:])
-        print(results)
         return results
 
     def _run_scp(self):
